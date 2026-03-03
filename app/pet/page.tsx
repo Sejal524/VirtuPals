@@ -1,19 +1,31 @@
 "use client"
 
+import { useEffect } from "react"
 import { useGame } from "@/contexts/game-context"
 import { Navbar } from "@/components/navbar"
 import { PetDisplay } from "@/components/pet-display"
 import { CareActions } from "@/components/care-actions"
 import { AIChatbot } from "@/components/ai-chatbot"
-import { redirect } from "next/navigation"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Calendar, Heart, Clock } from "lucide-react"
 
 export default function PetPage() {
   const { pet, hasCompletedSetup } = useGame()
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!hasCompletedSetup || !pet) {
+      router.push("/")
+    }
+  }, [hasCompletedSetup, pet, router])
 
   if (!hasCompletedSetup || !pet) {
-    redirect("/")
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto" />
+      </div>
+    )
   }
 
   const daysSinceCreation = Math.floor(

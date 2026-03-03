@@ -120,25 +120,25 @@ const defaultTasks: Task[] = [
 ]
 
 const defaultBadges: Badge[] = [
-  { id: "first-pet", name: "Pet Parent", description: "Adopted your first pet!", icon: "paw-print", earned: false },
-  { id: "first-task", name: "Hard Worker", description: "Completed your first task", icon: "star", earned: false },
-  { id: "saver", name: "Super Saver", description: "Saved $50 or more", icon: "piggy-bank", earned: false },
-  { id: "caretaker", name: "Loving Caretaker", description: "Fed your pet 10 times", icon: "heart", earned: false },
-  { id: "rich", name: "Money Master", description: "Earned $200 total", icon: "banknote", earned: false },
-  { id: "healthy", name: "Health Hero", description: "Visited the vet 3 times", icon: "hospital", earned: false },
-  { id: "shopper", name: "Smart Shopper", description: "Made your first purchase", icon: "shopping-cart", earned: false },
-  { id: "screentime", name: "Screen Smart", description: "Earned max screen time bonus", icon: "smartphone", earned: false },
+  { id: "first-pet", name: "Pet Parent", description: "Adopted your first pet!", icon: "\u{1F43E}", earned: false },
+  { id: "first-task", name: "Hard Worker", description: "Completed your first task", icon: "\u2B50", earned: false },
+  { id: "saver", name: "Super Saver", description: "Saved $50 or more", icon: "\u{1F416}", earned: false },
+  { id: "caretaker", name: "Loving Caretaker", description: "Fed your pet 10 times", icon: "\u2764\uFE0F", earned: false },
+  { id: "rich", name: "Money Master", description: "Earned $200 total", icon: "\u{1F4B5}", earned: false },
+  { id: "healthy", name: "Health Hero", description: "Visited the vet 3 times", icon: "\u{1F3E5}", earned: false },
+  { id: "shopper", name: "Smart Shopper", description: "Made your first purchase", icon: "\u{1F6D2}", earned: false },
+  { id: "screentime", name: "Screen Smart", description: "Earned max screen time bonus", icon: "\u{1F4F1}", earned: false },
 ]
 
 const defaultShopItems: ShopItem[] = [
-  { id: "premium-food", name: "Premium Pet Food", description: "Increases hunger boost by 50%", price: 25, category: "upgrade", icon: "beef", owned: false },
-  { id: "comfy-bed", name: "Comfy Bed", description: "Rest restores 20% more energy", price: 40, category: "upgrade", icon: "bed", owned: false },
-  { id: "fun-ball", name: "Super Fun Ball", description: "Playing gives 10% more happiness", price: 30, category: "toy", icon: "circle-dot", owned: false },
-  { id: "grooming-kit", name: "Deluxe Grooming Kit", description: "Cleaning gives 20% more cleanliness", price: 35, category: "upgrade", icon: "sparkles", owned: false },
-  { id: "health-insurance", name: "Pet Insurance", description: "Vet visits cost 25% less", price: 100, category: "upgrade", icon: "stethoscope", owned: false },
-  { id: "treat-jar", name: "Treat Jar", description: "Bonus happiness when feeding", price: 20, category: "food", icon: "cookie", owned: false },
-  { id: "bow-tie", name: "Fancy Bow Tie", description: "Your pet looks extra stylish!", price: 15, category: "accessory", icon: "ribbon", owned: false },
-  { id: "sunglasses", name: "Cool Sunglasses", description: "Your pet is too cool!", price: 18, category: "accessory", icon: "glasses", owned: false },
+  { id: "premium-food", name: "Premium Pet Food", description: "Increases hunger boost by 50%", price: 25, category: "upgrade", icon: "\u{1F969}", owned: false },
+  { id: "comfy-bed", name: "Comfy Bed", description: "Rest restores 20% more energy", price: 40, category: "upgrade", icon: "\u{1F6CF}\uFE0F", owned: false },
+  { id: "fun-ball", name: "Super Fun Ball", description: "Playing gives 10% more happiness", price: 30, category: "toy", icon: "\u{1F3BE}", owned: false },
+  { id: "grooming-kit", name: "Deluxe Grooming Kit", description: "Cleaning gives 20% more cleanliness", price: 35, category: "upgrade", icon: "\u2728", owned: false },
+  { id: "health-insurance", name: "Pet Insurance", description: "Vet visits cost 25% less", price: 100, category: "upgrade", icon: "\u{1FA7A}", owned: false },
+  { id: "treat-jar", name: "Treat Jar", description: "Bonus happiness when feeding", price: 20, category: "food", icon: "\u{1F36A}", owned: false },
+  { id: "bow-tie", name: "Fancy Bow Tie", description: "Your pet looks extra stylish!", price: 15, category: "accessory", icon: "\u{1F380}", owned: false },
+  { id: "sunglasses", name: "Cool Sunglasses", description: "Your pet is too cool!", price: 18, category: "accessory", icon: "\u{1F60E}", owned: false },
 ]
 
 const randomEvents = [
