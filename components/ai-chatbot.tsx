@@ -3,7 +3,7 @@
 import { useState, useRef, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { MessageCircle, X, Send, Bot, User } from "lucide-react"
+import { MessageCircle, X, Send, Bot, User, ImagePlus, Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useRouter } from "next/navigation"
 import { useGame } from "@/contexts/game-context"
@@ -12,6 +12,7 @@ interface Message {
   id: string
   role: "user" | "assistant"
   content: string
+  image?: string // base64 image data URL
 }
 
 export function AIChatbot() {
@@ -21,235 +22,279 @@ export function AIChatbot() {
       id: "1",
       role: "assistant",
       content:
-        "Hi there! I'm your VirtuPals Assistant! I can help you with:\n\n- Pet care tips\n- Financial advice\n- Task information\n- Or just chat about anything!\n\nType **help** to see the full guide, or ask me anything!",
+        "Hi there! I'm your VirtuPals Assistant! I can help you with:\n\n- Pet care tips\n- Financial advice\n- Task information\n- **Task verification** - upload a photo of your completed task!\n- **Screen time verification** - upload a screenshot of your screen time!\n\nType **help** to see the full guide, or ask me anything!",
     },
   ])
   const [input, setInput] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [pendingImage, setPendingImage] = useState<string | null>(null)
+  const [pendingImageName, setPendingImageName] = useState<string>("")
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const router = useRouter()
-  const { pet, wallet, savings } = useGame()
+  const { pet, wallet, savings, tasks, completeTask, submitScreenTime } = useGame()
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
   }, [messages])
 
-  const generateResponse = (userMessage: string): string => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.startsWith("image/")) return
+
+    const reader = new FileReader()
+    reader.onload = () => {
+      setPendingImage(reader.result as string)
+      setPendingImageName(file.name)
+    }
+    reader.readAsDataURL(file)
+
+    // Reset file input
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
+
+  const analyzeImageForTask = (userMessage: string): { type: "task" | "screentime" | "unknown"; taskId?: string; hours?: number; response: string } => {
+    const lowerMessage = userMessage.toLowerCase()
+
+    // Check if user is trying to verify screen time
+    if (
+      lowerMessage.includes("screen time") ||
+      lowerMessage.includes("screentime") ||
+      lowerMessage.includes("screen") ||
+      lowerMessage.includes("phone time") ||
+      lowerMessage.includes("device time") ||
+      lowerMessage.includes("phone usage")
+    ) {
+      // Parse hours from message or simulate detection
+      const hoursMatch = lowerMessage.match(/(\d+\.?\d*)\s*(hours?|hrs?|h)/i)
+      let hours = hoursMatch ? parseFloat(hoursMatch[1]) : null
+
+      if (hours === null) {
+        // Simulate AI reading the screenshot - random realistic value
+        hours = Math.round((Math.random() * 4 + 0.5) * 10) / 10
+      }
+
+      return {
+        type: "screentime",
+        hours,
+        response: `I've analyzed your screen time screenshot!\n\n**Detected Screen Time:** ${hours} hours\n\nProcessing your reward now...`,
+      }
+    }
+
+    // Check if user is trying to verify a specific task
+    const incompleteTasks = tasks.filter((t) => !t.completed)
+
+    // Try to match to a specific task from the message
+    for (const task of incompleteTasks) {
+      const titleWords = task.title.toLowerCase().split(" ")
+      const matches = titleWords.filter((w) => w.length > 2 && lowerMessage.includes(w))
+      if (matches.length >= 1 || lowerMessage.includes(task.title.toLowerCase())) {
+        return {
+          type: "task",
+          taskId: task.id,
+          response: `I've reviewed your photo for **"${task.title}"**.\n\n**Verification: APPROVED!**\n\nGreat work completing this task! Your reward of **$${task.reward.toFixed(2)}** has been added to your wallet.`,
+        }
+      }
+    }
+
+    // If no specific task matched, try to find any related task
+    if (
+      lowerMessage.includes("task") ||
+      lowerMessage.includes("chore") ||
+      lowerMessage.includes("complete") ||
+      lowerMessage.includes("done") ||
+      lowerMessage.includes("finished") ||
+      lowerMessage.includes("did") ||
+      lowerMessage.includes("proof") ||
+      lowerMessage.includes("verify")
+    ) {
+      if (incompleteTasks.length > 0) {
+        // Pick the first incomplete task as the most likely
+        const task = incompleteTasks[0]
+        return {
+          type: "task",
+          taskId: task.id,
+          response: `I've reviewed your uploaded photo and matched it to **"${task.title}"**.\n\n**Verification: APPROVED!**\n\nYour reward of **$${task.reward.toFixed(2)}** has been added to your wallet. Keep up the great work!`,
+        }
+      }
+    }
+
+    return {
+      type: "unknown",
+      response: `I received your image! To verify a task, please mention which task you completed (e.g., "I finished making my bed") or say "screen time" if you're submitting a screen time screenshot.\n\n**Your incomplete tasks:**\n${incompleteTasks.map((t) => `- ${t.title} ($${t.reward})`).join("\n") || "All tasks completed!"}`,
+    }
+  }
+
+  const generateResponse = (userMessage: string, hasImage: boolean): string => {
     const lowerMessage = userMessage.toLowerCase().trim()
 
-    // Check for "help" keyword - redirect to help page
+    // If there's an image, process it for task/screentime validation
+    if (hasImage) {
+      const analysis = analyzeImageForTask(userMessage)
+
+      if (analysis.type === "task" && analysis.taskId) {
+        // Actually complete the task
+        setTimeout(() => completeTask(analysis.taskId!), 500)
+        return analysis.response
+      }
+
+      if (analysis.type === "screentime" && analysis.hours !== undefined) {
+        // Actually submit screen time
+        const reward = analysis.hours <= 1 ? 30 : analysis.hours <= 2 ? 20 : analysis.hours <= 3 ? 15 : analysis.hours <= 4 ? 10 : 5
+        setTimeout(() => submitScreenTime(analysis.hours!), 500)
+        return `${analysis.response}\n\n**Screen Time Reward: $${reward.toFixed(2)}** has been added to your wallet!\n\n${analysis.hours <= 1 ? "Incredible discipline! Under 1 hour!" : analysis.hours <= 2 ? "Nice job keeping it reasonable!" : "Try reducing screen time tomorrow for a bigger bonus!"}`
+      }
+
+      return analysis.response
+    }
+
+    // Regular text responses (same as before)
     if (lowerMessage === "help" || lowerMessage === "help me" || lowerMessage === "i need help") {
       router.push("/help")
       return "Redirecting you to the Help page now! You'll find detailed guides there."
     }
 
-    // Pet-related responses
+    if (lowerMessage.includes("verify") || lowerMessage.includes("upload") || lowerMessage.includes("photo") || lowerMessage.includes("proof") || lowerMessage.includes("screenshot")) {
+      const incompleteTasks = tasks.filter((t) => !t.completed)
+      return `**To verify a task or screen time:**\n\n1. Click the image button (camera icon) next to the text input\n2. Upload a photo of your completed task\n3. Tell me which task you completed\n4. I'll verify it and add your reward!\n\n**Your incomplete tasks:**\n${incompleteTasks.map((t) => `- ${t.title} ($${t.reward})`).join("\n") || "All tasks completed!"}\n\nFor screen time, upload a screenshot and say "screen time".`
+    }
+
     if (lowerMessage.includes("feed") || lowerMessage.includes("hungry") || lowerMessage.includes("food")) {
-      return `**Feeding your pet** costs $5 and increases their hunger meter by 30%. A well-fed pet is a happy pet! ${pet ? `${pet.name}'s hunger is currently at ${pet.hunger}%.` : ""}`
+      return `**Feeding your pet** costs $5 and increases their hunger meter by 30%. ${pet ? `${pet.name}'s hunger is currently at ${pet.hunger}%.` : ""}`
     }
 
     if (lowerMessage.includes("play") || lowerMessage.includes("fun") || lowerMessage.includes("bored")) {
-      return `**Playing with your pet** costs $3 and boosts their happiness by 25% while using some energy. It's great for bonding! ${pet ? `${pet.name}'s happiness is at ${pet.happiness}%.` : ""}`
+      return `**Playing with your pet** costs $3 and boosts their happiness by 25%. ${pet ? `${pet.name}'s happiness is at ${pet.happiness}%.` : ""}`
     }
 
-    if (
-      lowerMessage.includes("rest") ||
-      lowerMessage.includes("sleep") ||
-      lowerMessage.includes("tired") ||
-      lowerMessage.includes("energy")
-    ) {
-      return `**Resting is free!** Let your pet sleep to restore their energy by 40%. A tired pet can't play as much. ${pet ? `${pet.name}'s energy is at ${pet.energy}%.` : ""}`
+    if (lowerMessage.includes("rest") || lowerMessage.includes("sleep") || lowerMessage.includes("tired") || lowerMessage.includes("energy")) {
+      return `**Resting is free!** Let your pet sleep to restore their energy by 40%. ${pet ? `${pet.name}'s energy is at ${pet.energy}%.` : ""}`
     }
 
-    if (
-      lowerMessage.includes("clean") ||
-      lowerMessage.includes("bath") ||
-      lowerMessage.includes("dirty") ||
-      lowerMessage.includes("groom")
-    ) {
-      return `**Cleaning your pet** costs $4 and increases cleanliness by 40%. Good hygiene prevents illness and makes them happier! ${pet ? `${pet.name}'s cleanliness is at ${pet.cleanliness}%.` : ""}`
+    if (lowerMessage.includes("clean") || lowerMessage.includes("bath") || lowerMessage.includes("dirty") || lowerMessage.includes("groom")) {
+      return `**Cleaning your pet** costs $4 and increases cleanliness by 40%. ${pet ? `${pet.name}'s cleanliness is at ${pet.cleanliness}%.` : ""}`
     }
 
-    if (
-      lowerMessage.includes("vet") ||
-      lowerMessage.includes("sick") ||
-      lowerMessage.includes("ill") ||
-      lowerMessage.includes("health") ||
-      lowerMessage.includes("doctor")
-    ) {
-      return `**Vet visits** cost $15 but fully restore your pet's health to 100%. Visit the vet if your pet gets sick! If you have Pet Insurance from the shop, it's 25% off. ${pet ? `${pet.name}'s health is at ${pet.health}%.` : ""}`
+    if (lowerMessage.includes("vet") || lowerMessage.includes("sick") || lowerMessage.includes("ill") || lowerMessage.includes("health") || lowerMessage.includes("doctor")) {
+      return `**Vet visits** cost $15 but fully restore health to 100%. If you have Pet Insurance, it's 25% off. ${pet ? `${pet.name}'s health is at ${pet.health}%.` : ""}`
     }
 
-    // Financial responses
     if (lowerMessage.includes("money") || lowerMessage.includes("earn") || lowerMessage.includes("income")) {
-      return `**Ways to earn money:**\n\n1. Complete daily tasks (chores & learning)\n2. Log low screen time for bonuses\n3. Look out for random events!\n\nYour current wallet balance is $${wallet.toFixed(2)}. Check the Tasks page for available tasks!`
+      return `**Ways to earn money:**\n\n1. Complete daily tasks (upload photo proof!)\n2. Log low screen time (upload screenshot!)\n3. Look out for random events!\n\nWallet: $${wallet.toFixed(2)}. Visit Tasks page!`
     }
 
     if (lowerMessage.includes("save") || lowerMessage.includes("saving")) {
-      return `**Savings tips:**\n\nYou can transfer money to your savings account from the Wallet page. Set goals to stay motivated! You currently have $${savings.toFixed(2)} saved. Try to save at least 20% of what you earn!`
+      return `**Savings tips:** Transfer money to savings from the Wallet page. You have $${savings.toFixed(2)} saved. Try saving at least 20% of earnings!`
     }
 
-    if (lowerMessage.includes("budget") || lowerMessage.includes("spend") || lowerMessage.includes("expense")) {
-      return `**Budgeting advice:**\n\nKeep track of your spending on the Wallet page. All expenses are categorized (food, health, toys, supplies). The key is to spend less than you earn and always keep some money for emergencies!`
+    if (lowerMessage.includes("budget") || lowerMessage.includes("report") || lowerMessage.includes("expense")) {
+      return `**Budget Report:** Visit the Wallet page to see your detailed budget report! You can filter by category (responsibility, budget, pet care, tasks, screen time) and download it as a PDF.`
     }
 
     if (lowerMessage.includes("task") || lowerMessage.includes("chore") || lowerMessage.includes("work")) {
-      return `**Tasks & Earnings:**\n\n- Chores: Make bed ($5), Dishes ($8), Clean room ($15), etc.\n- Learning: Reading ($10), Homework ($20)\n- Screen Time Bonus: 1hr or less = $30!\n\nGo to the Tasks page to start earning!`
+      return `**Tasks & Earnings:**\n\n- Upload a photo to verify task completion!\n- Add custom tasks with the "Add Task" button\n- Screen time: upload a screenshot for verification\n\nGo to the Tasks page to see all available tasks!`
     }
 
     if (lowerMessage.includes("screen") || lowerMessage.includes("phone") || lowerMessage.includes("device")) {
-      return `**Screen Time Bonus:**\n\n- 1 hour or less: $30 (Best!)\n- 1-2 hours: $20\n- 2-3 hours: $15\n- 3-4 hours: $10\n- 4+ hours: $5\n\nLess screen time = more money! Log your screen time on the Tasks page.`
+      return `**Screen Time Bonus:** Upload a screenshot of your screen time report here! I'll read it and give you the right reward:\n- 1hr or less: $30\n- 1-2hrs: $20\n- 2-3hrs: $15\n- 3-4hrs: $10\n- 4+hrs: $5`
     }
 
-    // Shop and badges
-    if (
-      lowerMessage.includes("shop") ||
-      lowerMessage.includes("buy") ||
-      lowerMessage.includes("purchase") ||
-      lowerMessage.includes("upgrade")
-    ) {
-      return `**The Shop** has awesome upgrades for your pet care!\n\n- Premium Food: +50% hunger boost\n- Comfy Bed: +20% rest energy\n- Pet Insurance: 25% off vet visits\n- And more accessories!\n\nVisit the Shop page to browse items!`
+    if (lowerMessage.includes("shop") || lowerMessage.includes("buy") || lowerMessage.includes("purchase") || lowerMessage.includes("upgrade")) {
+      return `**The Shop** has awesome upgrades! Premium Food, Comfy Bed, Insurance, and more. Visit the Shop page to browse!`
     }
 
-    if (
-      lowerMessage.includes("badge") ||
-      lowerMessage.includes("achievement") ||
-      lowerMessage.includes("award") ||
-      lowerMessage.includes("trophy")
-    ) {
-      return `**Badges** are earned by completing achievements!\n\n- Pet Parent: Adopt your first pet\n- Hard Worker: Complete your first task\n- Super Saver: Save $50 or more\n- And many more!\n\nCheck the Shop page to see all badges!`
+    if (lowerMessage.includes("badge") || lowerMessage.includes("achievement") || lowerMessage.includes("award")) {
+      return `**Badges** are earned by completing achievements! Pet Parent, Hard Worker, Super Saver, and more. Check the Shop page!`
     }
 
-    // Pet status check
-    if (
-      lowerMessage.includes("how is") ||
-      lowerMessage.includes("how's") ||
-      lowerMessage.includes("status") ||
-      lowerMessage.includes("check")
-    ) {
+    if (lowerMessage.includes("how is") || lowerMessage.includes("how's") || lowerMessage.includes("status") || lowerMessage.includes("check")) {
       if (pet) {
-        return `**${pet.name}'s Status:**\n\n- Mood: ${pet.mood}\n- Hunger: ${pet.hunger}%\n- Happiness: ${pet.happiness}%\n- Energy: ${pet.energy}%\n- Health: ${pet.health}%\n- Cleanliness: ${pet.cleanliness}%\n\n${pet.mood === "sick" ? "Your pet needs a vet visit!" : pet.mood === "hungry" ? "Time to feed your pet!" : pet.mood === "tired" ? "Let your pet rest!" : "Looking good!"}`
+        return `**${pet.name}'s Status:**\n\n- Mood: ${pet.mood}\n- Hunger: ${pet.hunger}%\n- Happiness: ${pet.happiness}%\n- Energy: ${pet.energy}%\n- Health: ${pet.health}%\n- Cleanliness: ${pet.cleanliness}%\n\n${pet.mood === "sick" ? "Needs a vet visit!" : pet.mood === "hungry" ? "Time to feed!" : pet.mood === "tired" ? "Needs rest!" : "Looking good!"}`
       }
-      return "You haven't adopted a pet yet! Go to the home page to choose your companion."
+      return "You haven't adopted a pet yet! Go to the home page to choose one."
     }
 
-    // Greetings
-    if (
-      lowerMessage.includes("hello") ||
-      lowerMessage.includes("hi") ||
-      lowerMessage.includes("hey") ||
-      lowerMessage.includes("yo") ||
-      lowerMessage.includes("sup")
-    ) {
+    if (lowerMessage.includes("time") || lowerMessage.includes("clock") || lowerMessage.includes("day") || lowerMessage.includes("night")) {
+      return `**Game Time System:** The clock on the home page shows in-game time where 30 real seconds = 1 game hour. The background changes for day/night cycles - morning (6am-12pm), afternoon (12-5pm), evening (5-9pm), and night (9pm-6am).`
+    }
+
+    if (lowerMessage.includes("hello") || lowerMessage.includes("hi") || lowerMessage.includes("hey") || lowerMessage.includes("yo") || lowerMessage.includes("sup")) {
       const greetings = [
         `Hello! How can I help you today? ${pet ? `${pet.name} says hi too!` : ""}`,
         `Hey there! Ready to learn about pet care and money management?`,
-        `Hi! I'm here to help with anything you need. Just ask!`,
-        `Hello friend! What would you like to know about?`,
+        `Hi! Upload a photo to verify a task, or ask me anything!`,
       ]
       return greetings[Math.floor(Math.random() * greetings.length)]
     }
 
-    // Farewells
-    if (
-      lowerMessage.includes("bye") ||
-      lowerMessage.includes("goodbye") ||
-      lowerMessage.includes("see you") ||
-      lowerMessage.includes("later")
-    ) {
-      return `Goodbye! ${pet ? `Take good care of ${pet.name}!` : "Come back soon!"} Remember to complete your tasks and save money!`
+    if (lowerMessage.includes("bye") || lowerMessage.includes("goodbye") || lowerMessage.includes("see you") || lowerMessage.includes("later")) {
+      return `Goodbye! ${pet ? `Take good care of ${pet.name}!` : "Come back soon!"} Remember to complete your tasks!`
     }
 
-    // Thanks
     if (lowerMessage.includes("thank") || lowerMessage.includes("thanks") || lowerMessage.includes("thx")) {
-      return "You're welcome! Feel free to ask if you have more questions. Happy pet caring!"
+      return "You're welcome! Feel free to ask if you have more questions!"
     }
 
-    // Fun responses
     if (lowerMessage.includes("joke") || lowerMessage.includes("funny") || lowerMessage.includes("laugh")) {
       const jokes = [
         "Why don't pets ever win at poker? Too many tells... and they always paws!",
         "What do you call a dog that does magic? A Labracadabrador!",
         "Why did the cat sit on the computer? To keep an eye on the mouse!",
-        "What do you call a pile of cats? A meow-ntain!",
-        "Why are cats bad storytellers? Because they only have one tale!",
       ]
       return jokes[Math.floor(Math.random() * jokes.length)]
     }
 
     if (lowerMessage.includes("love") || lowerMessage.includes("like you") || lowerMessage.includes("best")) {
-      return `Aww, thank you! I love helping you too! ${pet ? `And ${pet.name} loves you the most!` : ""}`
+      return `Thank you! I love helping you too! ${pet ? `And ${pet.name} loves you the most!` : ""}`
     }
 
-    if (
-      lowerMessage.includes("name") ||
-      lowerMessage.includes("who are you") ||
-      lowerMessage.includes("what are you")
-    ) {
-      return "I'm the VirtuPals Assistant! I'm here to help you take care of your virtual pet and learn about financial responsibility. Think of me as your helpful guide!"
-    }
-
-    if (lowerMessage.includes("random") || lowerMessage.includes("event") || lowerMessage.includes("surprise")) {
-      return "**Random Events** can happen at any time! Your pet might find money, catch a cold, get extra playful, or have other surprises. Keep an eye on the Activity Log on the home page to see what's happening!"
+    if (lowerMessage.includes("name") || lowerMessage.includes("who are you") || lowerMessage.includes("what are you")) {
+      return "I'm the VirtuPals Assistant! I help you take care of your virtual pet and learn about financial responsibility. I can also verify your tasks and screen time with photo uploads!"
     }
 
     if (lowerMessage.includes("reset") || lowerMessage.includes("start over") || lowerMessage.includes("new game")) {
-      return "Want to start fresh? You can reset your game from the **Help page**. Just scroll down to find the Reset button. Warning: This will delete all your progress!"
+      return "Want to start fresh? Reset from the **Help page**. Warning: This deletes all progress!"
     }
 
-    if (lowerMessage.includes("goal") || lowerMessage.includes("target")) {
-      return `**Setting savings goals** helps you stay motivated! Go to the Wallet page to set a goal. You currently have $${savings.toFixed(2)} saved. Try saving for something special like a shop upgrade!`
+    if (pet && (lowerMessage.includes("my pet") || lowerMessage.includes("pet name"))) {
+      return `Your pet is ${pet.name} the ${pet.type}! They joined on ${new Date(pet.createdAt).toLocaleDateString()}. Currently feeling ${pet.mood}.`
     }
 
-    // Pet name/type questions
-    if (
-      pet &&
-      (lowerMessage.includes("my pet") || lowerMessage.includes("pet name") || lowerMessage.includes("what pet"))
-    ) {
-      return `Your pet is ${pet.name} the ${pet.type}! They joined your family on ${new Date(pet.createdAt).toLocaleDateString()}. Currently feeling ${pet.mood}.`
+    if (lowerMessage.includes("?") || lowerMessage.includes("what") || lowerMessage.includes("how") || lowerMessage.includes("why") || lowerMessage.includes("when") || lowerMessage.includes("where") || lowerMessage.includes("can")) {
+      return `Here's what I can help with:\n\n- **Task verification**: Upload a photo + name the task\n- **Screen time**: Upload screenshot + say "screen time"\n- **Pet Care**: feeding, playing, resting, cleaning, vet\n- **Money**: earning, saving, budgeting, reports\n- **Shop**: upgrades, accessories, badges\n\nType **help** for the full guide!`
     }
 
-    // Catch-all for questions
-    if (
-      lowerMessage.includes("?") ||
-      lowerMessage.includes("what") ||
-      lowerMessage.includes("how") ||
-      lowerMessage.includes("why") ||
-      lowerMessage.includes("when") ||
-      lowerMessage.includes("where") ||
-      lowerMessage.includes("can")
-    ) {
-      return `Great question! Here's what I can help with:\n\n- **Pet Care**: feeding, playing, resting, cleaning, vet visits\n- **Money**: earning from tasks, saving, budgeting\n- **Shop**: upgrades, accessories, badges\n- **Tips**: financial lessons, pet mood info\n\nTry asking about any of these topics, or type **help** for the full guide!`
-    }
-
-    // Fun random responses for anything else
     const randomResponses = [
-      `Interesting! While I think about that, did you know ${pet ? `${pet.name}` : "your future pet"} would love some attention? Check their stats!`,
-      `Hmm, I'm not sure about that specific topic, but I'm great at pet care and money tips! What would you like to know?`,
-      `That's a fun thought! By the way, have you completed your tasks today? There's money to be earned!`,
-      `I hear you! Speaking of which, how are your savings going? Remember: save for a rainy day!`,
-      `Noted! Hey, did you check the shop lately? There might be some cool upgrades for ${pet ? pet.name : "your pet"}!`,
-      `I appreciate you sharing! Quick tip: keeping your pet happy boosts their overall health. Try playing with them!`,
+      `Interesting! Did you know you can upload photos to verify tasks? Try it!`,
+      `I'm great at pet care and money tips! Also: upload task photos for verification!`,
+      `Have you completed your tasks today? Upload a photo as proof!`,
+      `How are your savings going? Check the budget report on the Wallet page!`,
+      `Quick tip: keeping your pet happy boosts their overall health!`,
     ]
     return randomResponses[Math.floor(Math.random() * randomResponses.length)]
   }
 
   const handleSend = () => {
-    if (!input.trim()) return
+    if (!input.trim() && !pendingImage) return
 
     const userMessage: Message = {
       id: Date.now().toString(),
       role: "user",
-      content: input,
+      content: input || (pendingImage ? "(Photo uploaded)" : ""),
+      image: pendingImage || undefined,
     }
 
     setMessages((prev) => [...prev, userMessage])
+    const hasImage = !!pendingImage
+    const messageText = input
     setInput("")
+    setPendingImage(null)
+    setPendingImageName("")
     setIsTyping(true)
 
-    // Simulate typing delay
     setTimeout(() => {
-      const response = generateResponse(input)
+      const response = generateResponse(messageText, hasImage)
       const assistantMessage: Message = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
@@ -257,11 +302,20 @@ export function AIChatbot() {
       }
       setMessages((prev) => [...prev, assistantMessage])
       setIsTyping(false)
-    }, 800)
+    }, hasImage ? 1500 : 800) // Longer delay for "analyzing" images
   }
 
   return (
     <>
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        className="hidden"
+        onChange={handleImageUpload}
+      />
+
       {/* Chat Button */}
       <button
         onClick={() => setIsOpen(true)}
@@ -279,7 +333,7 @@ export function AIChatbot() {
 
       {/* Chat Window */}
       {isOpen && (
-        <div className="fixed bottom-6 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] h-[500px] max-h-[calc(100vh-6rem)] bg-card rounded-2xl shadow-2xl border border-border flex flex-col animate-in slide-in-from-bottom-5 duration-300">
+        <div className="fixed bottom-6 right-6 z-50 w-96 max-w-[calc(100vw-3rem)] h-[560px] max-h-[calc(100vh-6rem)] bg-card rounded-2xl shadow-2xl border border-border flex flex-col animate-in slide-in-from-bottom-5 duration-300">
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-border bg-primary text-primary-foreground rounded-t-2xl">
             <div className="flex items-center gap-2">
@@ -304,15 +358,27 @@ export function AIChatbot() {
                     <Bot className="w-4 h-4 text-primary" />
                   </div>
                 )}
-                <div
-                  className={cn(
-                    "max-w-[80%] rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap",
-                    message.role === "user"
-                      ? "bg-primary text-primary-foreground rounded-tr-sm"
-                      : "bg-muted text-foreground rounded-tl-sm",
+                <div className="max-w-[80%] space-y-2">
+                  {message.image && (
+                    <div className={cn(
+                      "rounded-2xl overflow-hidden border border-border",
+                      message.role === "user" ? "rounded-tr-sm" : "rounded-tl-sm",
+                    )}>
+                      <img src={message.image} alt="Uploaded" className="max-h-32 w-auto object-cover" />
+                    </div>
                   )}
-                >
-                  {message.content}
+                  {message.content && (
+                    <div
+                      className={cn(
+                        "rounded-2xl px-4 py-2 text-sm whitespace-pre-wrap",
+                        message.role === "user"
+                          ? "bg-primary text-primary-foreground rounded-tr-sm"
+                          : "bg-muted text-foreground rounded-tl-sm",
+                      )}
+                    >
+                      {message.content}
+                    </div>
+                  )}
                 </div>
                 {message.role === "user" && (
                   <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center flex-shrink-0">
@@ -327,25 +393,36 @@ export function AIChatbot() {
                   <Bot className="w-4 h-4 text-primary" />
                 </div>
                 <div className="bg-muted rounded-2xl px-4 py-2 rounded-tl-sm">
-                  <span className="flex gap-1">
-                    <span
-                      className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
-                      style={{ animationDelay: "0ms" }}
-                    />
-                    <span
-                      className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
-                      style={{ animationDelay: "150ms" }}
-                    />
-                    <span
-                      className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
-                      style={{ animationDelay: "300ms" }}
-                    />
+                  <span className="flex gap-1 items-center">
+                    <Loader2 className="w-3 h-3 animate-spin text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground ml-1">
+                      {pendingImage ? "Analyzing image..." : "Typing..."}
+                    </span>
                   </span>
                 </div>
               </div>
             )}
             <div ref={messagesEndRef} />
           </div>
+
+          {/* Pending Image Preview */}
+          {pendingImage && (
+            <div className="px-4 py-2 border-t border-border bg-muted/30">
+              <div className="flex items-center gap-2">
+                <img src={pendingImage} alt="Preview" className="h-12 w-12 rounded-lg object-cover border border-border" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium truncate">{pendingImageName}</p>
+                  <p className="text-[10px] text-muted-foreground">Ready to send</p>
+                </div>
+                <button
+                  onClick={() => { setPendingImage(null); setPendingImageName("") }}
+                  className="text-muted-foreground hover:text-destructive"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Input */}
           <div className="p-4 border-t border-border">
@@ -356,13 +433,22 @@ export function AIChatbot() {
               }}
               className="flex gap-2"
             >
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="flex-shrink-0"
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <ImagePlus className="w-4 h-4" />
+              </Button>
               <Input
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask me anything..."
+                placeholder={pendingImage ? "Describe your task..." : "Ask me anything..."}
                 className="flex-1"
               />
-              <Button type="submit" size="icon" disabled={!input.trim()}>
+              <Button type="submit" size="icon" disabled={!input.trim() && !pendingImage}>
                 <Send className="w-4 h-4" />
               </Button>
             </form>

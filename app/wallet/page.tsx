@@ -1,12 +1,12 @@
 "use client"
 
 import type React from "react"
-
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useGame } from "@/contexts/game-context"
 import { Navbar } from "@/components/navbar"
 import { AIChatbot } from "@/components/ai-chatbot"
-import { redirect } from "next/navigation"
+import { BudgetReport } from "@/components/budget-report"
+import { useRouter } from "next/navigation"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -57,16 +57,30 @@ export default function WalletPage() {
   const [withdrawAmount, setWithdrawAmount] = useState("")
   const [goalAmount, setGoalAmount] = useState("")
   const [feedback, setFeedback] = useState<string | null>(null)
+  const router = useRouter()
+
+  useEffect(() => {
+    if (!hasCompletedSetup) {
+      router.push("/")
+    }
+  }, [hasCompletedSetup, router])
 
   if (!hasCompletedSetup) {
-    redirect("/")
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4" />
+          <p className="text-muted-foreground">Loading...</p>
+        </div>
+      </div>
+    )
   }
 
   const handleDeposit = () => {
     const amount = Number.parseFloat(savingsAmount)
     if (isNaN(amount) || amount <= 0) return
     if (addToSavings(amount)) {
-      setFeedback(`Deposited $${amount.toFixed(2)} to savings! 🎉`)
+      setFeedback(`Deposited $${amount.toFixed(2)} to savings!`)
       setSavingsAmount("")
       setTimeout(() => setFeedback(null), 3000)
     } else {
@@ -92,14 +106,13 @@ export default function WalletPage() {
     const amount = Number.parseFloat(goalAmount)
     if (isNaN(amount) || amount <= 0) return
     setSavingsGoal(amount)
-    setFeedback(`New savings goal set: $${amount.toFixed(2)}! 🎯`)
+    setFeedback(`New savings goal set: $${amount.toFixed(2)}!`)
     setGoalAmount("")
     setTimeout(() => setFeedback(null), 3000)
   }
 
   const savingsProgress = savingsGoal > 0 ? (savings / savingsGoal) * 100 : 0
 
-  // Group expenses by category
   const expensesByCategory = expenses.reduce(
     (acc, exp) => {
       acc[exp.category] = (acc[exp.category] || 0) + exp.amount
@@ -114,7 +127,7 @@ export default function WalletPage() {
 
       <main className="max-w-6xl mx-auto px-4 py-8">
         <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-foreground mb-2">💰 My Wallet</h1>
+          <h1 className="text-4xl font-bold text-foreground mb-2">My Wallet</h1>
           <p className="text-muted-foreground">Track your earnings, spending, and savings</p>
         </div>
 
@@ -185,7 +198,6 @@ export default function WalletPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Savings Goal Progress */}
               <div className="space-y-2">
                 <div className="flex justify-between items-center">
                   <span className="text-sm text-muted-foreground flex items-center gap-1">
@@ -203,72 +215,40 @@ export default function WalletPage() {
                   />
                 </div>
                 <p className="text-sm text-muted-foreground text-center">
-                  {savingsProgress >= 100
-                    ? "🎉 Goal reached! Set a new one!"
-                    : `${savingsProgress.toFixed(1)}% of your goal`}
+                  {savingsProgress >= 100 ? "Goal reached! Set a new one!" : `${savingsProgress.toFixed(1)}% of your goal`}
                 </p>
               </div>
 
-              {/* Deposit */}
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <ArrowUpRight className="w-4 h-4 text-green-500" />
                   Deposit to Savings
                 </label>
                 <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Amount"
-                    value={savingsAmount}
-                    onChange={(e) => setSavingsAmount(e.target.value)}
-                    min="0"
-                    step="0.01"
-                  />
-                  <Button onClick={handleDeposit} className="bg-green-600 hover:bg-green-700">
-                    Deposit
-                  </Button>
+                  <Input type="number" placeholder="Amount" value={savingsAmount} onChange={(e) => setSavingsAmount(e.target.value)} min="0" step="0.01" />
+                  <Button onClick={handleDeposit} className="bg-green-600 hover:bg-green-700 text-white">Deposit</Button>
                 </div>
               </div>
 
-              {/* Withdraw */}
               <div className="space-y-2">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <ArrowDownLeft className="w-4 h-4 text-orange-500" />
                   Withdraw from Savings
                 </label>
                 <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Amount"
-                    value={withdrawAmount}
-                    onChange={(e) => setWithdrawAmount(e.target.value)}
-                    min="0"
-                    step="0.01"
-                  />
-                  <Button onClick={handleWithdraw} variant="outline">
-                    Withdraw
-                  </Button>
+                  <Input type="number" placeholder="Amount" value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} min="0" step="0.01" />
+                  <Button onClick={handleWithdraw} variant="outline">Withdraw</Button>
                 </div>
               </div>
 
-              {/* Set Goal */}
               <div className="space-y-2 pt-4 border-t border-border">
                 <label className="text-sm font-medium flex items-center gap-2">
                   <Target className="w-4 h-4 text-primary" />
                   Set New Goal
                 </label>
                 <div className="flex gap-2">
-                  <Input
-                    type="number"
-                    placeholder="Goal amount"
-                    value={goalAmount}
-                    onChange={(e) => setGoalAmount(e.target.value)}
-                    min="0"
-                    step="1"
-                  />
-                  <Button onClick={handleSetGoal} variant="secondary">
-                    Set Goal
-                  </Button>
+                  <Input type="number" placeholder="Goal amount" value={goalAmount} onChange={(e) => setGoalAmount(e.target.value)} min="0" step="1" />
+                  <Button onClick={handleSetGoal} variant="secondary">Set Goal</Button>
                 </div>
               </div>
             </CardContent>
@@ -277,10 +257,9 @@ export default function WalletPage() {
           {/* Expense Breakdown */}
           <Card className="shadow-lg">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2">📊 Spending Breakdown</CardTitle>
+              <CardTitle className="flex items-center gap-2">Spending Breakdown</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              {/* Category Totals */}
               <div className="space-y-3">
                 {Object.entries(expensesByCategory).length > 0 ? (
                   Object.entries(expensesByCategory).map(([category, amount]) => (
@@ -300,27 +279,20 @@ export default function WalletPage() {
                 )}
               </div>
 
-              {/* Recent Transactions */}
               <div className="pt-4 border-t border-border">
                 <h4 className="font-medium mb-3">Recent Transactions</h4>
                 <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {expenses
-                    .slice(-5)
-                    .reverse()
-                    .map((expense) => (
-                      <div
-                        key={expense.id}
-                        className="flex items-center justify-between py-2 border-b border-border/50 last:border-0"
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className={cn("p-1 rounded", categoryColors[expense.category])}>
-                            {categoryIcons[expense.category]}
-                          </span>
-                          <span className="text-sm">{expense.description}</span>
-                        </div>
-                        <span className="text-sm font-medium text-red-600">-${expense.amount.toFixed(2)}</span>
+                  {expenses.slice(-5).reverse().map((expense) => (
+                    <div key={expense.id} className="flex items-center justify-between py-2 border-b border-border/50 last:border-0">
+                      <div className="flex items-center gap-2">
+                        <span className={cn("p-1 rounded", categoryColors[expense.category])}>
+                          {categoryIcons[expense.category]}
+                        </span>
+                        <span className="text-sm">{expense.description}</span>
                       </div>
-                    ))}
+                      <span className="text-sm font-medium text-red-600">-${expense.amount.toFixed(2)}</span>
+                    </div>
+                  ))}
                   {expenses.length === 0 && (
                     <p className="text-sm text-muted-foreground text-center py-4">No transactions yet</p>
                   )}
@@ -330,31 +302,27 @@ export default function WalletPage() {
           </Card>
         </div>
 
+        {/* Budget Report - Full Width */}
+        <div className="mt-6">
+          <BudgetReport />
+        </div>
+
         {/* Financial Tips */}
         <Card className="mt-6 bg-gradient-to-r from-primary/5 via-accent/5 to-secondary/5">
           <CardContent className="p-6">
-            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">💡 Money Management Tips</h3>
+            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">Money Management Tips</h3>
             <div className="grid md:grid-cols-3 gap-4">
               <div className="bg-card p-4 rounded-lg">
-                <span className="text-2xl">📊</span>
                 <h4 className="font-medium mt-2">Budget Rule</h4>
-                <p className="text-sm text-muted-foreground">
-                  Try the 50/30/20 rule: 50% needs, 30% wants, 20% savings!
-                </p>
+                <p className="text-sm text-muted-foreground">Try the 50/30/20 rule: 50% needs, 30% wants, 20% savings!</p>
               </div>
               <div className="bg-card p-4 rounded-lg">
-                <span className="text-2xl">🎯</span>
                 <h4 className="font-medium mt-2">Set Goals</h4>
-                <p className="text-sm text-muted-foreground">
-                  Having a savings goal motivates you to save more consistently.
-                </p>
+                <p className="text-sm text-muted-foreground">Having a savings goal motivates you to save more consistently.</p>
               </div>
               <div className="bg-card p-4 rounded-lg">
-                <span className="text-2xl">📝</span>
                 <h4 className="font-medium mt-2">Track Everything</h4>
-                <p className="text-sm text-muted-foreground">
-                  Knowing where your money goes helps you make better decisions.
-                </p>
+                <p className="text-sm text-muted-foreground">Knowing where your money goes helps you make better decisions.</p>
               </div>
             </div>
           </CardContent>

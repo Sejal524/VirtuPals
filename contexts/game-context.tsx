@@ -1,6 +1,6 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 
 export type PetType = "dog" | "cat" | "bunny" | "hamster"
 export type PetMood = "happy" | "sad" | "hungry" | "tired" | "sick" | "energetic" | "loving"
@@ -32,7 +32,9 @@ export interface Task {
   description: string
   reward: number
   completed: boolean
-  type: "chore" | "learning" | "screentime"
+  type: "chore" | "learning" | "screentime" | "custom"
+  isCustom?: boolean
+  requiresPhoto?: boolean
 }
 
 export interface ActivityLog {
@@ -61,6 +63,14 @@ export interface ShopItem {
   owned: boolean
 }
 
+export interface GameTime {
+  hour: number
+  minute: number
+  day: number
+  month: number
+  year: number
+}
+
 export interface GameState {
   pet: Pet | null
   wallet: number
@@ -74,6 +84,7 @@ export interface GameState {
   activityLog: ActivityLog[]
   badges: Badge[]
   shopItems: ShopItem[]
+  gameTime: GameTime
 }
 
 interface GameContextType extends GameState {
@@ -92,152 +103,42 @@ interface GameContextType extends GameState {
   addActivity: (message: string, type: ActivityLog["type"]) => void
   purchaseItem: (itemId: string) => boolean
   triggerRandomEvent: () => void
+  addCustomTask: (title: string, description: string, reward: number) => void
+  getTimeOfDay: () => "morning" | "afternoon" | "evening" | "night"
+  getFormattedDate: () => string
 }
 
 const defaultTasks: Task[] = [
-  {
-    id: "1",
-    title: "Make Your Bed",
-    description: "Start your day organized!",
-    reward: 5,
-    completed: false,
-    type: "chore",
-  },
-  {
-    id: "2",
-    title: "Do the Dishes",
-    description: "Help keep the kitchen clean",
-    reward: 8,
-    completed: false,
-    type: "chore",
-  },
-  {
-    id: "3",
-    title: "Clean Your Room",
-    description: "A tidy space, a tidy mind",
-    reward: 15,
-    completed: false,
-    type: "chore",
-  },
-  {
-    id: "4",
-    title: "Read for 30 Minutes",
-    description: "Expand your knowledge",
-    reward: 10,
-    completed: false,
-    type: "learning",
-  },
-  {
-    id: "5",
-    title: "Complete Homework",
-    description: "Stay on top of your studies",
-    reward: 20,
-    completed: false,
-    type: "learning",
-  },
-  {
-    id: "6",
-    title: "Help with Laundry",
-    description: "Learn a life skill",
-    reward: 12,
-    completed: false,
-    type: "chore",
-  },
-  {
-    id: "7",
-    title: "Take Out Trash",
-    description: "Keep your home clean",
-    reward: 5,
-    completed: false,
-    type: "chore",
-  },
-  { id: "8", title: "Water Plants", description: "Care for nature", reward: 5, completed: false, type: "chore" },
+  { id: "1", title: "Make Your Bed", description: "Start your day organized!", reward: 5, completed: false, type: "chore", requiresPhoto: true },
+  { id: "2", title: "Do the Dishes", description: "Help keep the kitchen clean", reward: 8, completed: false, type: "chore", requiresPhoto: true },
+  { id: "3", title: "Clean Your Room", description: "A tidy space, a tidy mind", reward: 15, completed: false, type: "chore", requiresPhoto: true },
+  { id: "4", title: "Read for 30 Minutes", description: "Expand your knowledge", reward: 10, completed: false, type: "learning", requiresPhoto: true },
+  { id: "5", title: "Complete Homework", description: "Stay on top of your studies", reward: 20, completed: false, type: "learning", requiresPhoto: true },
+  { id: "6", title: "Help with Laundry", description: "Learn a life skill", reward: 12, completed: false, type: "chore", requiresPhoto: true },
+  { id: "7", title: "Take Out Trash", description: "Keep your home clean", reward: 5, completed: false, type: "chore", requiresPhoto: true },
+  { id: "8", title: "Water Plants", description: "Care for nature", reward: 5, completed: false, type: "chore", requiresPhoto: true },
 ]
 
 const defaultBadges: Badge[] = [
-  { id: "first-pet", name: "Pet Parent", description: "Adopted your first pet!", icon: "🐾", earned: false },
-  { id: "first-task", name: "Hard Worker", description: "Completed your first task", icon: "⭐", earned: false },
-  { id: "saver", name: "Super Saver", description: "Saved $50 or more", icon: "🏦", earned: false },
-  { id: "caretaker", name: "Loving Caretaker", description: "Fed your pet 10 times", icon: "💕", earned: false },
-  { id: "rich", name: "Money Master", description: "Earned $200 total", icon: "💰", earned: false },
-  { id: "healthy", name: "Health Hero", description: "Visited the vet 3 times", icon: "🏥", earned: false },
-  { id: "shopper", name: "Smart Shopper", description: "Made your first purchase", icon: "🛒", earned: false },
-  { id: "screentime", name: "Screen Smart", description: "Earned max screen time bonus", icon: "📱", earned: false },
+  { id: "first-pet", name: "Pet Parent", description: "Adopted your first pet!", icon: "paw-print", earned: false },
+  { id: "first-task", name: "Hard Worker", description: "Completed your first task", icon: "star", earned: false },
+  { id: "saver", name: "Super Saver", description: "Saved $50 or more", icon: "piggy-bank", earned: false },
+  { id: "caretaker", name: "Loving Caretaker", description: "Fed your pet 10 times", icon: "heart", earned: false },
+  { id: "rich", name: "Money Master", description: "Earned $200 total", icon: "banknote", earned: false },
+  { id: "healthy", name: "Health Hero", description: "Visited the vet 3 times", icon: "hospital", earned: false },
+  { id: "shopper", name: "Smart Shopper", description: "Made your first purchase", icon: "shopping-cart", earned: false },
+  { id: "screentime", name: "Screen Smart", description: "Earned max screen time bonus", icon: "smartphone", earned: false },
 ]
 
 const defaultShopItems: ShopItem[] = [
-  {
-    id: "premium-food",
-    name: "Premium Pet Food",
-    description: "Increases hunger boost by 50%",
-    price: 25,
-    category: "upgrade",
-    icon: "🥩",
-    owned: false,
-  },
-  {
-    id: "comfy-bed",
-    name: "Comfy Bed",
-    description: "Rest restores 20% more energy",
-    price: 40,
-    category: "upgrade",
-    icon: "🛏️",
-    owned: false,
-  },
-  {
-    id: "fun-ball",
-    name: "Super Fun Ball",
-    description: "Playing gives 10% more happiness",
-    price: 30,
-    category: "toy",
-    icon: "🎾",
-    owned: false,
-  },
-  {
-    id: "grooming-kit",
-    name: "Deluxe Grooming Kit",
-    description: "Cleaning gives 20% more cleanliness",
-    price: 35,
-    category: "upgrade",
-    icon: "✨",
-    owned: false,
-  },
-  {
-    id: "health-insurance",
-    name: "Pet Insurance",
-    description: "Vet visits cost 25% less",
-    price: 100,
-    category: "upgrade",
-    icon: "🩺",
-    owned: false,
-  },
-  {
-    id: "treat-jar",
-    name: "Treat Jar",
-    description: "Bonus happiness when feeding",
-    price: 20,
-    category: "food",
-    icon: "🍪",
-    owned: false,
-  },
-  {
-    id: "bow-tie",
-    name: "Fancy Bow Tie",
-    description: "Your pet looks extra stylish!",
-    price: 15,
-    category: "accessory",
-    icon: "🎀",
-    owned: false,
-  },
-  {
-    id: "sunglasses",
-    name: "Cool Sunglasses",
-    description: "Your pet is too cool!",
-    price: 18,
-    category: "accessory",
-    icon: "😎",
-    owned: false,
-  },
+  { id: "premium-food", name: "Premium Pet Food", description: "Increases hunger boost by 50%", price: 25, category: "upgrade", icon: "beef", owned: false },
+  { id: "comfy-bed", name: "Comfy Bed", description: "Rest restores 20% more energy", price: 40, category: "upgrade", icon: "bed", owned: false },
+  { id: "fun-ball", name: "Super Fun Ball", description: "Playing gives 10% more happiness", price: 30, category: "toy", icon: "circle-dot", owned: false },
+  { id: "grooming-kit", name: "Deluxe Grooming Kit", description: "Cleaning gives 20% more cleanliness", price: 35, category: "upgrade", icon: "sparkles", owned: false },
+  { id: "health-insurance", name: "Pet Insurance", description: "Vet visits cost 25% less", price: 100, category: "upgrade", icon: "stethoscope", owned: false },
+  { id: "treat-jar", name: "Treat Jar", description: "Bonus happiness when feeding", price: 20, category: "food", icon: "cookie", owned: false },
+  { id: "bow-tie", name: "Fancy Bow Tie", description: "Your pet looks extra stylish!", price: 15, category: "accessory", icon: "ribbon", owned: false },
+  { id: "sunglasses", name: "Cool Sunglasses", description: "Your pet is too cool!", price: 18, category: "accessory", icon: "glasses", owned: false },
 ]
 
 const randomEvents = [
@@ -253,6 +154,8 @@ const randomEvents = [
 
 const GameContext = createContext<GameContextType | undefined>(undefined)
 
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
+
 export function GameProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<GameState>({
     pet: null,
@@ -267,6 +170,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     activityLog: [],
     badges: defaultBadges,
     shopItems: defaultShopItems,
+    gameTime: { hour: 8, minute: 0, day: 1, month: 1, year: 2025 },
   })
 
   const [feedCount, setFeedCount] = useState(0)
@@ -284,6 +188,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         activityLog: parsed.activityLog?.map((a: ActivityLog) => ({ ...a, timestamp: new Date(a.timestamp) })) || [],
         badges: parsed.badges || defaultBadges,
         shopItems: parsed.shopItems || defaultShopItems,
+        gameTime: parsed.gameTime || { hour: 8, minute: 0, day: 1, month: 1, year: 2025 },
       })
       setFeedCount(parsed.feedCount || 0)
       setVetCount(parsed.vetCount || 0)
@@ -296,6 +201,35 @@ export function GameProvider({ children }: { children: ReactNode }) {
       localStorage.setItem("virtupals-game", JSON.stringify({ ...state, feedCount, vetCount }))
     }
   }, [state, feedCount, vetCount])
+
+  // GAME TIME: 30 real seconds = 1 game hour. We tick every 1.25 seconds to advance 2.5 minutes.
+  useEffect(() => {
+    if (!state.hasCompletedSetup) return
+    const interval = setInterval(() => {
+      setState((prev) => {
+        let { hour, minute, day, month, year } = prev.gameTime
+        minute += 2 // advance ~2 minutes each tick (1.25s * 30 ticks = 37.5s ~ 30s per hour)
+        if (minute >= 60) {
+          minute = 0
+          hour++
+        }
+        if (hour >= 24) {
+          hour = 0
+          day++
+        }
+        if (day > 30) {
+          day = 1
+          month++
+        }
+        if (month > 12) {
+          month = 1
+          year++
+        }
+        return { ...prev, gameTime: { hour, minute, day, month, year } }
+      })
+    }, 1000) // tick every second, advancing 2 min = 30 ticks per hour = 30 seconds real time
+    return () => clearInterval(interval)
+  }, [state.hasCompletedSetup])
 
   // Pet stat decay over time
   useEffect(() => {
@@ -320,10 +254,9 @@ export function GameProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!state.pet || !state.hasCompletedSetup) return
     const triggerEvent = () => {
-      const randomDelay = Math.random() * 45000 + 45000 // 45-90 seconds
+      const randomDelay = Math.random() * 45000 + 45000
       setTimeout(() => {
         if (Math.random() < 0.3) {
-          // 30% chance to trigger event
           triggerRandomEvent()
         }
         triggerEvent()
@@ -331,6 +264,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
     triggerEvent()
   }, [state.hasCompletedSetup])
+
+  const getTimeOfDay = useCallback((): "morning" | "afternoon" | "evening" | "night" => {
+    const h = state.gameTime.hour
+    if (h >= 6 && h < 12) return "morning"
+    if (h >= 12 && h < 17) return "afternoon"
+    if (h >= 17 && h < 21) return "evening"
+    return "night"
+  }, [state.gameTime.hour])
+
+  const getFormattedDate = useCallback((): string => {
+    const { day, month, year } = state.gameTime
+    return `${MONTH_NAMES[month - 1]} ${day}, ${year}`
+  }, [state.gameTime])
 
   const calculateMood = (pet: Pet): PetMood => {
     if (pet.health < 30) return "sick"
@@ -351,7 +297,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
     }
     setState((prev) => ({
       ...prev,
-      activityLog: [activity, ...prev.activityLog].slice(0, 50), // Keep last 50 activities
+      activityLog: [activity, ...prev.activityLog].slice(0, 50),
     }))
   }
 
@@ -397,12 +343,7 @@ export function GameProvider({ children }: { children: ReactNode }) {
         wallet: newWallet,
         totalEarned: event.effect === "bonus" ? prev.totalEarned + event.amount : prev.totalEarned,
         activityLog: [
-          {
-            id: Date.now().toString(),
-            message,
-            type: "event",
-            timestamp: new Date(),
-          },
+          { id: Date.now().toString(), message, type: "event", timestamp: new Date() },
           ...prev.activityLog,
         ].slice(0, 50),
       }
@@ -421,7 +362,6 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const purchaseItem = (itemId: string): boolean => {
     const item = state.shopItems.find((i) => i.id === itemId)
     if (!item || item.owned || state.wallet < item.price) return false
-
     setState((prev) => ({
       ...prev,
       wallet: prev.wallet - item.price,
@@ -429,52 +369,29 @@ export function GameProvider({ children }: { children: ReactNode }) {
       shopItems: prev.shopItems.map((i) => (i.id === itemId ? { ...i, owned: true } : i)),
     }))
     addActivity(`Purchased ${item.name} for $${item.price}`, "shop")
-
-    // Earn shopper badge on first purchase
     if (!state.badges.find((b) => b.id === "shopper")?.earned) {
       earnBadge("shopper")
     }
-
     return true
   }
 
   const createPet = (name: string, type: PetType) => {
     const newPet: Pet = {
-      name,
-      type,
-      mood: "happy",
-      hunger: 70,
-      happiness: 80,
-      energy: 80,
-      health: 100,
-      cleanliness: 90,
-      age: 0,
-      createdAt: new Date(),
+      name, type, mood: "happy", hunger: 70, happiness: 80, energy: 80, health: 100, cleanliness: 90, age: 0, createdAt: new Date(),
     }
     setState((prev) => ({
       ...prev,
       pet: newPet,
       hasCompletedSetup: true,
       activityLog: [
-        {
-          id: Date.now().toString(),
-          message: `Welcome ${name} to the family!`,
-          type: "event",
-          timestamp: new Date(),
-        },
+        { id: Date.now().toString(), message: `Welcome ${name} to the family!`, type: "event", timestamp: new Date() },
       ],
     }))
     earnBadge("first-pet")
   }
 
   const addExpense = (category: Expense["category"], description: string, amount: number) => {
-    const expense: Expense = {
-      id: Date.now().toString(),
-      category,
-      description,
-      amount,
-      date: new Date(),
-    }
+    const expense: Expense = { id: Date.now().toString(), category, description, amount, date: new Date() }
     setState((prev) => ({
       ...prev,
       expenses: [...prev.expenses, expense],
@@ -488,28 +405,20 @@ export function GameProvider({ children }: { children: ReactNode }) {
     const hasTreatJar = state.shopItems.find((i) => i.id === "treat-jar")?.owned
     const hungerBoost = hasPremiumFood ? 45 : 30
     const happinessBoost = hasTreatJar ? 15 : 5
-
     setState((prev) => ({
       ...prev,
       wallet: prev.wallet - cost,
       pet: prev.pet
-        ? {
-            ...prev.pet,
-            hunger: Math.min(100, prev.pet.hunger + hungerBoost),
-            happiness: Math.min(100, prev.pet.happiness + happinessBoost),
-            mood: calculateMood({ ...prev.pet, hunger: Math.min(100, prev.pet.hunger + hungerBoost) }),
-          }
+        ? { ...prev.pet, hunger: Math.min(100, prev.pet.hunger + hungerBoost), happiness: Math.min(100, prev.pet.happiness + happinessBoost), mood: calculateMood({ ...prev.pet, hunger: Math.min(100, prev.pet.hunger + hungerBoost) }) }
         : null,
     }))
     addExpense("food", "Pet food", cost)
     addActivity(`Fed ${state.pet.name} for $${cost}`, "care")
-
     setFeedCount((prev) => {
       const newCount = prev + 1
       if (newCount >= 10) earnBadge("caretaker")
       return newCount
     })
-
     return true
   }
 
@@ -517,17 +426,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (state.wallet < cost || !state.pet) return false
     const hasFunBall = state.shopItems.find((i) => i.id === "fun-ball")?.owned
     const happinessBoost = hasFunBall ? 35 : 25
-
     setState((prev) => ({
       ...prev,
       wallet: prev.wallet - cost,
       pet: prev.pet
-        ? {
-            ...prev.pet,
-            happiness: Math.min(100, prev.pet.happiness + happinessBoost),
-            energy: Math.max(0, prev.pet.energy - 15),
-            mood: calculateMood({ ...prev.pet, happiness: Math.min(100, prev.pet.happiness + happinessBoost) }),
-          }
+        ? { ...prev.pet, happiness: Math.min(100, prev.pet.happiness + happinessBoost), energy: Math.max(0, prev.pet.energy - 15), mood: calculateMood({ ...prev.pet, happiness: Math.min(100, prev.pet.happiness + happinessBoost) }) }
         : null,
     }))
     addExpense("toys", "Play time & toys", cost)
@@ -539,15 +442,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (!state.pet) return
     const hasComfyBed = state.shopItems.find((i) => i.id === "comfy-bed")?.owned
     const energyBoost = hasComfyBed ? 60 : 40
-
     setState((prev) => ({
       ...prev,
       pet: prev.pet
-        ? {
-            ...prev.pet,
-            energy: Math.min(100, prev.pet.energy + energyBoost),
-            mood: calculateMood({ ...prev.pet, energy: Math.min(100, prev.pet.energy + energyBoost) }),
-          }
+        ? { ...prev.pet, energy: Math.min(100, prev.pet.energy + energyBoost), mood: calculateMood({ ...prev.pet, energy: Math.min(100, prev.pet.energy + energyBoost) }) }
         : null,
     }))
     addActivity(`${state.pet.name} took a nice rest`, "care")
@@ -557,17 +455,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     if (state.wallet < cost || !state.pet) return false
     const hasGroomingKit = state.shopItems.find((i) => i.id === "grooming-kit")?.owned
     const cleanlinessBoost = hasGroomingKit ? 60 : 40
-
     setState((prev) => ({
       ...prev,
       wallet: prev.wallet - cost,
       pet: prev.pet
-        ? {
-            ...prev.pet,
-            cleanliness: Math.min(100, prev.pet.cleanliness + cleanlinessBoost),
-            happiness: Math.min(100, prev.pet.happiness + 10),
-            mood: calculateMood({ ...prev.pet, cleanliness: Math.min(100, prev.pet.cleanliness + cleanlinessBoost) }),
-          }
+        ? { ...prev.pet, cleanliness: Math.min(100, prev.pet.cleanliness + cleanlinessBoost), happiness: Math.min(100, prev.pet.happiness + 10), mood: calculateMood({ ...prev.pet, cleanliness: Math.min(100, prev.pet.cleanliness + cleanlinessBoost) }) }
         : null,
     }))
     addExpense("supplies", "Grooming supplies", cost)
@@ -578,32 +470,19 @@ export function GameProvider({ children }: { children: ReactNode }) {
   const visitVet = (cost: number): boolean => {
     const hasInsurance = state.shopItems.find((i) => i.id === "health-insurance")?.owned
     const actualCost = hasInsurance ? Math.round(cost * 0.75) : cost
-
     if (state.wallet < actualCost || !state.pet) return false
-
     setState((prev) => ({
       ...prev,
       wallet: prev.wallet - actualCost,
-      pet: prev.pet
-        ? {
-            ...prev.pet,
-            health: 100,
-            mood: "happy",
-          }
-        : null,
+      pet: prev.pet ? { ...prev.pet, health: 100, mood: "happy" } : null,
     }))
     addExpense("health", "Vet visit", actualCost)
-    addActivity(
-      `Took ${state.pet.name} to the vet for $${actualCost}${hasInsurance ? " (insurance applied)" : ""}`,
-      "care",
-    )
-
+    addActivity(`Took ${state.pet.name} to the vet for $${actualCost}${hasInsurance ? " (insurance applied)" : ""}`, "care")
     setVetCount((prev) => {
       const newCount = prev + 1
       if (newCount >= 3) earnBadge("healthy")
       return newCount
     })
-
     return true
   }
 
@@ -617,47 +496,48 @@ export function GameProvider({ children }: { children: ReactNode }) {
       tasks: prev.tasks.map((t) => (t.id === taskId ? { ...t, completed: true } : t)),
     }))
     addActivity(`Completed "${task.title}" and earned $${task.reward}`, "task")
-
-    // Check for first-task badge
     if (!state.badges.find((b) => b.id === "first-task")?.earned) {
       earnBadge("first-task")
     }
-
-    // Check for money master badge
     if (state.totalEarned + task.reward >= 200) {
       earnBadge("rich")
     }
   }
 
-  const addToSavings = (amount: number): boolean => {
-    if (state.wallet < amount) return false
+  const addCustomTask = (title: string, description: string, reward: number) => {
+    const newTask: Task = {
+      id: `custom-${Date.now()}`,
+      title,
+      description,
+      reward,
+      completed: false,
+      type: "custom",
+      isCustom: true,
+      requiresPhoto: true,
+    }
     setState((prev) => ({
       ...prev,
-      wallet: prev.wallet - amount,
-      savings: prev.savings + amount,
+      tasks: [...prev.tasks, newTask],
     }))
+    addActivity(`Added new custom task: "${title}"`, "task")
+  }
+
+  const addToSavings = (amount: number): boolean => {
+    if (state.wallet < amount) return false
+    setState((prev) => ({ ...prev, wallet: prev.wallet - amount, savings: prev.savings + amount }))
     addActivity(`Deposited $${amount} to savings`, "financial")
-
-    // Check for saver badge
-    if (state.savings + amount >= 50) {
-      earnBadge("saver")
-    }
-
+    if (state.savings + amount >= 50) earnBadge("saver")
     return true
   }
 
   const withdrawFromSavings = (amount: number): boolean => {
     if (state.savings < amount) return false
-    setState((prev) => ({
-      ...prev,
-      wallet: prev.wallet + amount,
-      savings: prev.savings - amount,
-    }))
+    setState((prev) => ({ ...prev, wallet: prev.wallet + amount, savings: prev.savings - amount }))
     addActivity(`Withdrew $${amount} from savings`, "financial")
     return true
   }
 
-  const setSavingsGoal = (amount: number) => {
+  const setSavingsGoalFn = (amount: number) => {
     setState((prev) => ({ ...prev, savingsGoal: amount }))
   }
 
@@ -668,19 +548,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     else if (hours <= 3) reward = 15
     else if (hours <= 4) reward = 10
     else reward = 5
-
-    setState((prev) => ({
-      ...prev,
-      wallet: prev.wallet + reward,
-      totalEarned: prev.totalEarned + reward,
-    }))
+    setState((prev) => ({ ...prev, wallet: prev.wallet + reward, totalEarned: prev.totalEarned + reward }))
     addActivity(`Logged ${hours} hours screen time and earned $${reward}`, "task")
-
-    // Check for screentime badge
     if (hours <= 1 && !state.badges.find((b) => b.id === "screentime")?.earned) {
       earnBadge("screentime")
     }
-
     return reward
   }
 
@@ -689,18 +561,11 @@ export function GameProvider({ children }: { children: ReactNode }) {
     setFeedCount(0)
     setVetCount(0)
     setState({
-      pet: null,
-      wallet: 50,
-      savings: 0,
-      savingsGoal: 100,
-      expenses: [],
+      pet: null, wallet: 50, savings: 0, savingsGoal: 100, expenses: [],
       tasks: defaultTasks.map((t) => ({ ...t, completed: false })),
-      totalEarned: 50,
-      totalSpent: 0,
-      hasCompletedSetup: false,
-      activityLog: [],
-      badges: defaultBadges,
-      shopItems: defaultShopItems,
+      totalEarned: 50, totalSpent: 0, hasCompletedSetup: false, activityLog: [],
+      badges: defaultBadges, shopItems: defaultShopItems,
+      gameTime: { hour: 8, minute: 0, day: 1, month: 1, year: 2025 },
     })
   }
 
@@ -708,21 +573,10 @@ export function GameProvider({ children }: { children: ReactNode }) {
     <GameContext.Provider
       value={{
         ...state,
-        createPet,
-        feedPet,
-        playWithPet,
-        restPet,
-        cleanPet,
-        visitVet,
-        completeTask,
-        addToSavings,
-        withdrawFromSavings,
-        setSavingsGoal,
-        submitScreenTime,
-        resetGame,
-        addActivity,
-        purchaseItem,
-        triggerRandomEvent,
+        createPet, feedPet, playWithPet, restPet, cleanPet, visitVet,
+        completeTask, addToSavings, withdrawFromSavings, setSavingsGoal: setSavingsGoalFn,
+        submitScreenTime, resetGame, addActivity, purchaseItem, triggerRandomEvent,
+        addCustomTask, getTimeOfDay, getFormattedDate,
       }}
     >
       {children}
